@@ -1,0 +1,25 @@
+{
+  "defaultSeverity": "warning",
+  "extends": ["tslint:recommended", "tslint-config-prettier"],
+  "linterOptions": {
+    "exclude": ["./node_modules", "./**/graphqlgen.ts"]
+  },
+  "rules": {
+    "interface-name": false,
+    "no-conditional-assignment": true,
+    "no-bitwise": true,
+    "arrow-parens": [true, "ban-single-arg-parens"],
+    "curly": [true, "ignore-same-line"],
+    "variable-name": [
+      true,
+      "allow-snake-case",
+      "allow-leading-underscore",
+      "allow-pascal-case"
+    ],
+    "no-construct": { "severity": "error" },
+    "no-var-requires": false,
+    "no-console": false,
+    "ordered-imports": false,
+    "object-literal-sort-keys": false
+  }
+}

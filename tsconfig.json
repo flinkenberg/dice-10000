@@ -1,0 +1,20 @@
+{
+  "compileOnSave": true,
+  "compilerOptions": {
+    "esModuleInterop": true,
+    "noImplicitAny": true,
+    "noImplicitThis": true,
+    "noUnusedParameters": true,
+    "noUnusedLocals": true,
+    "sourceMap": false,
+    "removeComments": true,
+    "module": "esnext",
+    "moduleResolution": "node",
+    "noEmitOnError": true,
+    "target": "esnext",
+    "lib": ["esnext"],
+    "outDir": "./dist",
+    "allowUnreachableCode": true
+  },
+  "include": ["src/**/*.ts"]
+}
