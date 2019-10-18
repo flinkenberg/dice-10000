@@ -21,15 +21,16 @@ export interface ClientMessage {
 export enum ClientMessageStatus {
   JOIN = 0,
   LEAVE,
-  // QUIT,
-  MESSAGE,
+  MSG_REQ,
 }
 
 export enum ServerMessageStatus {
   JOIN = 0,
   LEAVE,
-  // QUIT,
-  MESSAGE,
+  MSG_REQ,
+  MSG_EMIT,
+  USR_JOINED,
+  USR_LEFT,
   OTHER,
 }
 
@@ -45,14 +46,15 @@ const rooms = new Map<string, RoomType>();
 function joinServer(ws: ws) {
   const id = uuid();
   users.set(id, { id, ws, roomId: null });
-  console.table([`User ${id} joined the server`])
+  console.table([`User ${id} joined the server`]);
+  console.log(`Number of connections: ${users.size}`)
   // NOTIFY USER
   // ws.send(`your id: ${id}.`);
   ws.on("message", m => {
     const user = users.get(id);
     const msg: ClientMessage = JSON.parse(m.toString());
     if (!user) {
-      ws.send(JSON.stringify({ status: ServerMessageStatus.OTHER, success: false, message: `User not found` }));
+      ws.send(JSON.stringify({ status: ServerMessageStatus.OTHER, success: false, message: `User not found`, timestamp: Date.now() }));
     } else {
       processMessage(user, msg);
     }
@@ -70,21 +72,21 @@ function processMessage(user: UserType, msg: ClientMessage) {
     case ClientMessageStatus.LEAVE:
       leaveRoom(user);
       break;
-    case ClientMessageStatus.MESSAGE:
+    case ClientMessageStatus.MSG_REQ:
       sendMessage(user, msg);
       break;
     default:
-      user.ws.send(JSON.stringify({ status: ServerMessageStatus.OTHER, success: false, message: `Invalid request status` }));
+      user.ws.send(JSON.stringify({ status: ServerMessageStatus.OTHER, success: false, message: `Invalid request status`, timestamp: Date.now() }));
       break;
   }
 }
 
 function sendMessage(user: UserType, msg: ClientMessage, ): void {
   if (!user.roomId) {
-    user.ws.send(JSON.stringify({ status: ServerMessageStatus.MESSAGE, success: false, message: `You cannot send messages when not in a room` }));
+    user.ws.send(JSON.stringify({ status: ServerMessageStatus.MSG_REQ, success: false, message: `You cannot send messages when not in a room`, timestamp: Date.now() }));
   } else {
     if (!msg.message) {
-      user.ws.send(JSON.stringify({ status: ServerMessageStatus.MESSAGE, success: false, message: `Your message has no content.` }))
+      user.ws.send(JSON.stringify({ status: ServerMessageStatus.MSG_REQ, success: false, message: `Your message has no content.`, timestamp: Date.now() }))
     } else {
       pub.publish(user.roomId, msg.message);
     }
@@ -94,13 +96,33 @@ function sendMessage(user: UserType, msg: ClientMessage, ): void {
 function broadcastMessage(roomId: string, msg: string) {
   const room = rooms.get(roomId);
   if (!room) return;
-  room.userIds.forEach(id => users.get(id).ws.send(JSON.stringify({ status: ServerMessageStatus.MESSAGE, success: true, message: msg })))
+  room.userIds.forEach(id => users.get(id).ws.send(JSON.stringify({ status: ServerMessageStatus.MSG_EMIT, success: true, message: msg, timestamp: Date.now() })))
+}
+
+function broadcastJoiningRoom(roomId: string, userId: string) {
+  const room = rooms.get(roomId);
+  if (!room) return;
+  room.userIds.forEach(id => {
+    if (id !== userId) {
+      users.get(id).ws.send(JSON.stringify({ status: ServerMessageStatus.USR_LEFT, success: true, message: `User ${userId} joined your room`, timestamp: Date.now() }))
+    }
+  })
+}
+
+function broadcastLeavingRoom(roomId: string, userId: string) {
+  const room = rooms.get(roomId);
+  if (!room) return;
+  room.userIds.forEach(id => {
+    if (id !== userId) {
+      users.get(id).ws.send(JSON.stringify({ status: ServerMessageStatus.USR_LEFT, success: true, message: `User ${userId} left your room`, timestamp: Date.now() }))
+    }
+  })
 }
 
 function joinRoom(user: UserType): string {
   let id: string = null;
   if (user.roomId) {
-    user.ws.send(JSON.stringify({ status: ServerMessageStatus.JOIN, success: false, message: `You are already a member of room ${user.roomId}` }));
+    user.ws.send(JSON.stringify({ status: ServerMessageStatus.JOIN, success: false, message: `You are already a member of room ${user.roomId}`, timestamp: Date.now() }));
     return id;
   } else {
     if (freeRooms.length) {
@@ -110,10 +132,11 @@ function joinRoom(user: UserType): string {
       if (room.userIds.length + 1 === room.limit) freeRooms = freeRooms.filter(fid => fid !== id);
       users.set(user.id, { ...user, roomId: id });
       rooms.set(id, { ...room, userIds: [...room.userIds, user.id] });
-      user.ws.send(JSON.stringify({ status: ServerMessageStatus.JOIN, success: true, message: `You have joined room ${id}` }));
+      user.ws.send(JSON.stringify({ status: ServerMessageStatus.JOIN, success: true, message: `You have joined room ${id}`, timestamp: Date.now() }));
+      broadcastJoiningRoom(id, user.id);
     } else {
       id = createRoom(user);
-      user.ws.send(JSON.stringify({ status: ServerMessageStatus.JOIN, success: true, message: `You have created and joined room ${id}` }));
+      user.ws.send(JSON.stringify({ status: ServerMessageStatus.JOIN, success: true, message: `You have created and joined room ${id}`, timestamp: Date.now() }));
     }
   }
   return id;
@@ -148,16 +171,17 @@ function leaveRoom(user: UserType): void {
       if (room.userIds.length >= 2) {
         rooms.set(room.id, { ...room, userIds: room.userIds.filter(id => id !== user.id) });
         freeRooms.push(room.id);
+        broadcastLeavingRoom(room.id, user.id);
       } else {
         deleteRoom(user);
       }
       users.set(user.id, { ...user, roomId: null });
-      user.ws.send(JSON.stringify({ status: ServerMessageStatus.LEAVE, success: true, message: `You have left room ${room.id}` }));
+      user.ws.send(JSON.stringify({ status: ServerMessageStatus.LEAVE, success: true, message: `You have left room ${room.id}`, timestamp: Date.now() }));
     } else {
-      user.ws.send(JSON.stringify({ status: ServerMessageStatus.LEAVE, success: false, message: `You are not a member of this room` }));
+      user.ws.send(JSON.stringify({ status: ServerMessageStatus.LEAVE, success: false, message: `You are not a member of this room`, timestamp: Date.now() }));
     }
   } else {
-    user.ws.send(JSON.stringify({ status: ServerMessageStatus.LEAVE, success: false, message: `You are not a member of any room` }));
+    user.ws.send(JSON.stringify({ status: ServerMessageStatus.LEAVE, success: false, message: `You are not a member of any room`, timestamp: Date.now() }));
   }
 }
 
