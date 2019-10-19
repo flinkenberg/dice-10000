@@ -7,7 +7,6 @@ const { REDIS_HOST, REDIS_PORT, REDIS_PSW } = process.env;
 const redisConfig: { [key: string]: string | number } = { host: REDIS_HOST, port: REDIS_PORT, password: REDIS_PSW };
 
 const pub = new Redis(redisConfig);
-const sub = new Redis(redisConfig);
 
 const wss = new ws.Server({
   port: 8080,
@@ -35,7 +34,7 @@ export enum ServerMessageStatus {
 }
 
 export type UserType = { id: string; ws: ws; roomId: string };
-export type RoomType = { id: string; sub: string; limit: number; userIds: string[] };
+export type RoomType = { id: string; sub: any; limit: number; userIds: string[] };
 // userId: ws
 const users = new Map<string, UserType>();
 // ids[]
@@ -135,23 +134,23 @@ function joinRoom(user: UserType): string {
       user.ws.send(JSON.stringify({ status: ServerMessageStatus.JOIN, success: true, message: `You have joined room ${id}`, timestamp: Date.now() }));
       broadcastJoiningRoom(id, user.id);
     } else {
-      id = createRoom(user);
-      user.ws.send(JSON.stringify({ status: ServerMessageStatus.JOIN, success: true, message: `You have created and joined room ${id}`, timestamp: Date.now() }));
+      createRoom(user);
+      user.ws.send(JSON.stringify({ status: ServerMessageStatus.JOIN, success: true, message: `You have created a new room`, timestamp: Date.now() }));
     }
   }
   return id;
 }
 
 // IF NO FREE ROOMS
-function createRoom(user: UserType): string {
+async function createRoom(user: UserType) {
   const id = uuid();
-  sub.subscribe(id);
-  sub.on("message", (_, msg) => broadcastMessage(id, msg))
+  const newSub = new Redis(redisConfig)
+  await newSub.subscribe(id);
+  newSub.on("message", (_: any, msg: any) => broadcastMessage(id, msg))
   users.set(user.id, { ...user, roomId: id });
-  rooms.set(id, { id, sub: null, limit: 2, userIds: [user.id] });
+  rooms.set(id, { id, sub: newSub, limit: 2, userIds: [user.id] });
   freeRooms.push(id);
-  console.table([`New room ${id} created`]);
-  return id;
+  console.table([`New room created`]);
 }
 
 function deleteRoom(user: UserType): void {
